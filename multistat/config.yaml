@@ -8,6 +8,7 @@ arch:
   - armhf
   - armv7
   - i386
+startup: application
 init: false
 options:
   rooms:
