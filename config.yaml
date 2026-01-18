@@ -1,7 +1,7 @@
 name: Multi-Room Thermostat
 version: "1.0.0"
 slug: multistat
-description: Multi-room thermostat with HRV control and OpenTherm integration
+description: Multi-room thermostat with HRV control and boiler temperature output
 arch:
   - aarch64
   - amd64
@@ -22,9 +22,8 @@ options:
           ki: 0.1
           kd: 0.05
   central_thermostat_entity: ""
-  opentherm:
-    serial_port: "/dev/ttyUSB0"
-    baudrate: 9600
+  boiler_target_sensor: "sensor.multistat_boiler_target_temp"
+  boiler_current_sensor: "sensor.multistat_boiler_current_temp"
   update_interval: 5
 schema:
   rooms:
@@ -39,8 +38,7 @@ schema:
           ki: float
           kd: float
   central_thermostat_entity: str
-  opentherm:
-    serial_port: str
-    baudrate: int
+  boiler_target_sensor: str
+  boiler_current_sensor: str
   update_interval: int
 image: ghcr.io/home-assistant/{arch}-base-python:latest

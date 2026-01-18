@@ -222,3 +222,80 @@ class HomeAssistantAPI:
                 tasks.append(task)
         
         await asyncio.gather(*tasks)
+    
+    async def create_sensor(self, entity_id: str, friendly_name: str, 
+                           device_class: Optional[str] = None,
+                           unit_of_measurement: Optional[str] = None,
+                           initial_value: Optional[Any] = None):
+        """Create a sensor entity in Home Assistant if it doesn't exist."""
+        if not self.session:
+            await self.start()
+        
+        try:
+            # Check if sensor already exists
+            existing = await self.get_state(entity_id)
+            if existing:
+                logger.debug(f"Sensor {entity_id} already exists")
+                return True
+            
+            # Create sensor by setting its state (Home Assistant will auto-create)
+            state_value = initial_value if initial_value is not None else 'unknown'
+            state_data = {
+                'state': str(state_value),
+                'attributes': {
+                    'friendly_name': friendly_name
+                }
+            }
+            
+            if device_class:
+                state_data['attributes']['device_class'] = device_class
+            if unit_of_measurement:
+                state_data['attributes']['unit_of_measurement'] = unit_of_measurement
+            
+            url = f'/core/api/states/{entity_id}'
+            async with self.session.post(url, json=state_data) as response:
+                if response.status in [200, 201]:
+                    logger.info(f"Created sensor {entity_id}: {friendly_name}")
+                    return True
+                else:
+                    error_text = await response.text()
+                    logger.warning(f"Failed to create sensor {entity_id}: {response.status} - {error_text}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error creating sensor {entity_id}: {e}")
+            return False
+    
+    async def set_sensor_state(self, entity_id: str, value: Any,
+                              unit_of_measurement: Optional[str] = None,
+                              friendly_name: Optional[str] = None,
+                              device_class: Optional[str] = None):
+        """Set the state of a sensor entity in Home Assistant."""
+        if not self.session:
+            await self.start()
+        
+        try:
+            state_value = str(value) if value is not None else 'unknown'
+            state_data = {
+                'state': state_value,
+                'attributes': {}
+            }
+            
+            if friendly_name:
+                state_data['attributes']['friendly_name'] = friendly_name
+            if device_class:
+                state_data['attributes']['device_class'] = device_class
+            if unit_of_measurement:
+                state_data['attributes']['unit_of_measurement'] = unit_of_measurement
+            
+            url = f'/core/api/states/{entity_id}'
+            async with self.session.post(url, json=state_data) as response:
+                if response.status in [200, 201]:
+                    logger.debug(f"Updated sensor {entity_id} to {state_value}")
+                    return True
+                else:
+                    error_text = await response.text()
+                    logger.warning(f"Failed to update sensor {entity_id}: {response.status} - {error_text}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error setting sensor state for {entity_id}: {e}")
+            return False

@@ -13,7 +13,6 @@ from pathlib import Path
 # Add app directory to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from opentherm import OpenThermController
 from room_manager import RoomManager
 from ha_integration import HomeAssistantAPI
 
@@ -36,14 +35,14 @@ class MultiRoomThermostat:
         
         # Initialize components
         self.room_manager = RoomManager(self.config.get('rooms', []))
-        self.opentherm = OpenThermController(
-            serial_port=self.config['opentherm']['serial_port'],
-            baudrate=self.config['opentherm'].get('baudrate', 9600)
-        )
         self.ha_api = HomeAssistantAPI()
         
         # Central thermostat entity (optional)
         self.central_thermostat_entity = self.config.get('central_thermostat_entity', '')
+        
+        # Boiler temperature sensor entities
+        self.boiler_target_sensor = self.config.get('boiler_target_sensor', 'sensor.multistat_boiler_target_temp')
+        self.boiler_current_sensor = self.config.get('boiler_current_sensor', 'sensor.multistat_boiler_current_temp')
         
         self.update_interval = self.config.get('update_interval', 5)
         
@@ -74,20 +73,32 @@ class MultiRoomThermostat:
         """Update room temperatures from Home Assistant."""
         await self.ha_api.update_room_temperatures(self.room_manager)
     
-    async def _update_boiler_control(self):
-        """Update boiler control based on room with highest difference."""
+    async def _update_boiler_temperatures(self):
+        """Output boiler control temperatures based on room with highest difference."""
         temps = self.room_manager.get_control_temperatures()
         if temps:
             target_temp, current_temp = temps
             room = self.room_manager.get_room_with_highest_difference()
             logger.info(
-                f"Controlling boiler for room '{room.name}': "
+                f"Boiler control for room '{room.name}': "
                 f"Target={target_temp}°C, Current={current_temp}°C"
             )
             
-            # Control via OpenTherm
-            if self.opentherm.connected:
-                self.opentherm.set_control_temperature(target_temp, current_temp)
+            # Publish temperatures as Home Assistant sensors
+            await self.ha_api.set_sensor_state(
+                self.boiler_target_sensor,
+                target_temp,
+                unit_of_measurement='°C',
+                friendly_name='Boiler Target Temperature',
+                device_class='temperature'
+            )
+            await self.ha_api.set_sensor_state(
+                self.boiler_current_sensor,
+                current_temp,
+                unit_of_measurement='°C',
+                friendly_name='Boiler Current Temperature',
+                device_class='temperature'
+            )
             
             # Control via central thermostat entity if configured
             if self.central_thermostat_entity:
@@ -96,7 +107,22 @@ class MultiRoomThermostat:
                     target_temp
                 )
         else:
-            logger.debug("No room needs heating, boiler control inactive")
+            logger.debug("No room needs heating, setting boiler temperatures to None")
+            # Set sensors to None when no room needs heating
+            await self.ha_api.set_sensor_state(
+                self.boiler_target_sensor,
+                None,
+                unit_of_measurement='°C',
+                friendly_name='Boiler Target Temperature',
+                device_class='temperature'
+            )
+            await self.ha_api.set_sensor_state(
+                self.boiler_current_sensor,
+                None,
+                unit_of_measurement='°C',
+                friendly_name='Boiler Current Temperature',
+                device_class='temperature'
+            )
     
     async def _update_hrv_valves(self):
         """Update HRV valve positions using PID control."""
@@ -121,8 +147,8 @@ class MultiRoomThermostat:
                 # Update room temperatures from Home Assistant
                 await self._update_temperatures()
                 
-                # Update boiler control (room with highest difference)
-                await self._update_boiler_control()
+                # Output boiler temperatures (room with highest difference)
+                await self._update_boiler_temperatures()
                 
                 # Update HRV valve positions using PID
                 await self._update_hrv_valves()
@@ -145,17 +171,26 @@ class MultiRoomThermostat:
             # Start Home Assistant API
             await self.ha_api.start()
             
-            # Start OpenTherm connection (optional if central thermostat is configured)
-            self.opentherm.start()
-            
-            if not self.opentherm.connected and not self.central_thermostat_entity:
-                logger.warning("OpenTherm not connected and no central thermostat configured")
-                logger.warning("Continuing with HRV control only...")
-            elif self.opentherm.connected:
-                logger.info("OpenTherm connected successfully")
+            # Initialize boiler temperature sensors
+            await self.ha_api.create_sensor(
+                self.boiler_target_sensor,
+                friendly_name='Boiler Target Temperature',
+                device_class='temperature',
+                unit_of_measurement='°C'
+            )
+            await self.ha_api.create_sensor(
+                self.boiler_current_sensor,
+                friendly_name='Boiler Current Temperature',
+                device_class='temperature',
+                unit_of_measurement='°C'
+            )
             
             if self.central_thermostat_entity:
                 logger.info(f"Using central thermostat: {self.central_thermostat_entity}")
+            
+            logger.info(f"Boiler temperatures will be published to:")
+            logger.info(f"  Target: {self.boiler_target_sensor}")
+            logger.info(f"  Current: {self.boiler_current_sensor}")
             
             # Start main loop
             self.running = True
@@ -171,9 +206,6 @@ class MultiRoomThermostat:
         logger.info("Shutting down Multi-Room Thermostat")
         
         self.running = False
-        
-        # Stop OpenTherm
-        self.opentherm.stop()
         
         # Stop Home Assistant API
         await self.ha_api.stop()

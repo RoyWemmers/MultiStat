@@ -1,24 +1,27 @@
 # Multi-Room Thermostat Add-on for Home Assistant
 
-A Home Assistant add-on that provides multi-room thermostat functionality with HRV (Heat Recovery Ventilator) valve control and OpenTherm boiler integration.
+A Home Assistant add-on that provides multi-room thermostat functionality with HRV (Heat Recovery Ventilator) valve control and boiler temperature output.
 
 ## Features
 
 - **Multi-Room Support**: Manage multiple rooms with individual target temperatures
-- **OpenTherm Integration**: Communicate with central boiler using OpenTherm protocol
-- **Intelligent Boiler Control**: Automatically controls boiler based on the room with the highest temperature difference
+- **Boiler Temperature Output**: Publishes target and current temperatures from the room with highest difference as Home Assistant sensors
+- **Intelligent Room Selection**: Automatically selects the room with the highest temperature difference for boiler control
 - **HRV Valve Control**: PID-based control for HRV valve positions in each room
+- **HRV Device Control**: Automatically enables/disables HRV devices based on room heating requirements
 - **Home Assistant Integration**: Seamlessly integrates with Home Assistant sensors and entities
 
 ## How It Works
 
 1. **Temperature Monitoring**: Continuously reads current temperatures from Home Assistant sensors for each configured room
 2. **Room Selection**: Identifies the room with the highest temperature difference (target - current)
-3. **Boiler/Thermostat Control**: 
-   - Sends target and current temperature of the selected room to the boiler via OpenTherm (if configured)
-   - Controls the central thermostat entity (if configured) with the target temperature
-4. **HRV Device Control**: Automatically enables/disables HRV devices based on room heating requirements
-5. **HRV Valve Control**: Uses PID controllers to adjust HRV valve positions based on temperature differences in each room
+3. **Boiler Temperature Output**: 
+   - Publishes target and current temperature of the selected room as Home Assistant sensors
+   - These sensors can be read by another device (e.g., OpenTherm controller) to control the boiler
+   - Sensors are set to `unknown` when no room needs heating
+4. **Central Thermostat Control**: Optionally controls a central thermostat entity (if configured) with the target temperature
+5. **HRV Device Control**: Automatically enables/disables HRV devices based on room heating requirements
+6. **HRV Valve Control**: Uses PID controllers to adjust HRV valve positions based on temperature differences in each room
 
 ## Installation
 
@@ -62,9 +65,8 @@ rooms:
 
 central_thermostat_entity: "climate.main_thermostat"
 
-opentherm:
-  serial_port: "/dev/ttyUSB0"
-  baudrate: 9600
+boiler_target_sensor: "sensor.multistat_boiler_target_temp"
+boiler_current_sensor: "sensor.multistat_boiler_current_temp"
 
 update_interval: 5
 ```
@@ -84,11 +86,13 @@ update_interval: 5
   - **kd**: Derivative gain for PID controller
 
 #### Central Thermostat
-- **central_thermostat_entity**: (Optional) Home Assistant entity ID of the central thermostat (climate or number entity). If configured, the add-on will control this thermostat in addition to or instead of OpenTherm.
+- **central_thermostat_entity**: (Optional) Home Assistant entity ID of the central thermostat (climate or number entity). If configured, the add-on will control this thermostat with the target temperature.
 
-#### OpenTherm
-- **serial_port**: Serial port device path (e.g., `/dev/ttyUSB0`)
-- **baudrate**: Serial communication baudrate (typically 9600)
+#### Boiler Temperature Sensors
+- **boiler_target_sensor**: Home Assistant sensor entity ID where the target temperature will be published (default: `sensor.multistat_boiler_target_temp`)
+- **boiler_current_sensor**: Home Assistant sensor entity ID where the current temperature will be published (default: `sensor.multistat_boiler_current_temp`)
+
+These sensors output the target and current temperatures from the room with the highest temperature difference. Another device (e.g., an OpenTherm controller) can read these sensors to control the boiler.
 
 #### Update Interval
 - **update_interval**: Update interval in seconds (default: 5)
@@ -106,22 +110,46 @@ Start with default values (Kp=1.0, Ki=0.1, Kd=0.05) and adjust based on your sys
 ## Requirements
 
 - Home Assistant with Supervisor
-- OpenTherm-compatible boiler with serial interface
 - HRV valves controllable via Home Assistant (number or cover entities)
 - Temperature sensors in each room
+- Another device/system to read the boiler temperature sensors and control the boiler (e.g., OpenTherm controller)
 
 ## Hardware Setup
 
-1. Connect OpenTherm interface to your boiler (typically via serial/USB adapter)
-2. Ensure HRV valves are integrated into Home Assistant
-3. Install temperature sensors in each room and add them to Home Assistant
+1. Ensure HRV valves are integrated into Home Assistant
+2. Install temperature sensors in each room and add them to Home Assistant
+3. Configure another device/system to read the boiler temperature sensors (`boiler_target_sensor` and `boiler_current_sensor`) and control your boiler accordingly
+
+## Boiler Integration
+
+The add-on publishes two sensor values that represent the boiler control temperatures:
+- **Target Temperature**: The desired temperature for the room with highest difference
+- **Current Temperature**: The current temperature of that room
+
+These sensors can be read by:
+- Another Home Assistant automation/script
+- An external OpenTherm controller device
+- Any system that can read Home Assistant sensor values
+
+Example Home Assistant automation to read these values:
+```yaml
+automation:
+  - alias: "Read Boiler Temperatures"
+    trigger:
+      - platform: state
+        entity_id: sensor.multistat_boiler_target_temp
+    action:
+      - service: system_log.write
+        data:
+          message: "Target: {{ states('sensor.multistat_boiler_target_temp') }}, Current: {{ states('sensor.multistat_boiler_current_temp') }}"
+```
 
 ## Troubleshooting
 
-### OpenTherm Connection Issues
-- Verify the serial port path is correct (`/dev/ttyUSB0`, `/dev/ttyACM0`, etc.)
-- Check serial port permissions
-- Ensure baudrate matches your OpenTherm interface
+### Boiler Temperature Sensors Not Updating
+- Verify the sensor entity IDs are correct in the configuration
+- Check that sensors are being created in Home Assistant (check Developer Tools > States)
+- Review add-on logs for errors
 
 ### Valve Control Not Working
 - Verify valve entity IDs are correct
