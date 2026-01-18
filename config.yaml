@@ -1,0 +1,46 @@
+name: Multi-Room Thermostat
+version: "1.0.0"
+slug: multistat
+description: Multi-room thermostat with HRV control and OpenTherm integration
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+init: false
+options:
+  rooms:
+    - name: ""
+      target_temp: 20.0
+      current_temp_sensor: ""
+      hrv_entity: ""
+      hrv_valves:
+        - name: ""
+          valve_entity: ""
+          kp: 1.0
+          ki: 0.1
+          kd: 0.05
+  central_thermostat_entity: ""
+  opentherm:
+    serial_port: "/dev/ttyUSB0"
+    baudrate: 9600
+  update_interval: 5
+schema:
+  rooms:
+    - name: str
+      target_temp: float
+      current_temp_sensor: str
+      hrv_entity: str
+      hrv_valves:
+        - name: str
+          valve_entity: str
+          kp: float
+          ki: float
+          kd: float
+  central_thermostat_entity: str
+  opentherm:
+    serial_port: str
+    baudrate: int
+  update_interval: int
+image: ghcr.io/home-assistant/{arch}-base-python:latest
